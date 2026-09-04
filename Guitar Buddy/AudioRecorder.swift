@@ -22,6 +22,7 @@ class AudioController: NSObject, ObservableObject, AVAudioRecorderDelegate {
     var audioRecorder: AVAudioRecorder?
     @Published var detectedChord: String?
     @Published var voicings: [[Int]]?
+    @Published var isDetecting = false
     @Published var isRecording = false
     @Published var failedConnection = false
     
@@ -55,6 +56,8 @@ class AudioController: NSObject, ObservableObject, AVAudioRecorderDelegate {
     }
     
     func startRecording(){
+        failedConnection = false
+        detectedChord = nil
         let filename = getDirectory().appendingPathComponent("recording.wav")
         let audioSettings: [String: Any] = [AVFormatIDKey: kAudioFormatLinearPCM,
                                           AVSampleRateKey: 44100.0,
@@ -76,6 +79,7 @@ class AudioController: NSObject, ObservableObject, AVAudioRecorderDelegate {
         audioRecorder = nil
         uploadRecording()
         isRecording = false
+        isDetecting = true
         let url = getDirectory().appendingPathComponent("recording.wav")
            print("File exists: \(FileManager.default.fileExists(atPath: url.path))")
            print("File size: \(try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) bytes")
@@ -83,12 +87,12 @@ class AudioController: NSObject, ObservableObject, AVAudioRecorderDelegate {
     
     func uploadRecording(){
         let filename = getDirectory().appendingPathComponent("recording.wav")
-        guard let backendURL = URL(string: "http://127.0.0.1:8000/detect") else{return}
+        guard let backendURL = URL(string: "https://chord-ghost.onrender.com/detect") else{return}
         do{
             let fileData = try Data(contentsOf: filename)
             let boundary = UUID().uuidString
             var request = URLRequest(url: backendURL)
-            request.timeoutInterval = 60
+            request.timeoutInterval = 120
             request.httpMethod = "POST"
             request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
             
@@ -104,6 +108,7 @@ class AudioController: NSObject, ObservableObject, AVAudioRecorderDelegate {
                 guard let data = data, error == nil else{
                     DispatchQueue.main.async{
                         self.failedConnection = true
+                        self.isDetecting = false
                     }
                     print("request failed: \(error?.localizedDescription ?? "unknown")")
                     return
@@ -113,6 +118,7 @@ class AudioController: NSObject, ObservableObject, AVAudioRecorderDelegate {
                     DispatchQueue.main.async{
                         self.detectedChord = result.chord
                         self.voicings = result.voicing
+                        self.isDetecting = false
                     }
                 }
             }.resume()
@@ -122,6 +128,7 @@ class AudioController: NSObject, ObservableObject, AVAudioRecorderDelegate {
             
         }catch{
             print("error uploading audio")
+            self.isDetecting = false
         }
     }
 }

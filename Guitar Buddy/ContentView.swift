@@ -20,23 +20,8 @@ struct ContentView: View {
 
             ZStack {
                 // 1. Yellow background (bottom)
-                Color(red: 255/255, green: 199/255, blue: 55/255)
+                Color(red: 210/255, green: 125/255, blue: 45/255)
                     .ignoresSafeArea()
-
-                // 2. Decorative circles (middle)
-//                HStack {
-//                    Circle()
-//                        .fill(Color.black)
-//                        .frame(width: 300 * xScale, height: 300 * xScale)
-//                        .offset(x: -170, y: 0 * xScale)
-//                    Spacer()
-//                    Circle()
-//                        .fill(Color.black)
-//                        .frame(width: 300 * xScale, height: 300 * xScale)
-//                        .offset(x: 170, y: 0 * xScale)
-//                }
-
-                // 3. Content (top)
                 VStack {
                     Text("Chord Detector")
                         .font(.system(size: 40 * xScale))
@@ -86,6 +71,13 @@ struct ContentView: View {
                             .bold()
                             .offset(y: 550 * yScale)
                     }
+                    if recorder.isDetecting == true {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .scaleEffect(2)
+                            .tint(.black)
+                            .offset(y: 550 * yScale)
+                    }
 
                     Spacer()
                     Button {
@@ -103,7 +95,7 @@ struct ContentView: View {
                                 .stroke(Color.black, lineWidth: 10)
                                 .frame(width: 73 * xScale, height: 73 * xScale)
                             Circle()
-                                .stroke(Color.white, lineWidth: 4)
+                                .stroke(Color(red: 210/255, green: 125/255, blue: 45/255), lineWidth: 4)
                                 .frame(width: 76 * xScale, height: 76 * xScale)
                             RoundedRectangle(cornerRadius: recorder.isRecording ? 8 : 40)
                                 .fill(Color(red: 235/255, green: 55/255, blue: 34/255))
@@ -111,6 +103,7 @@ struct ContentView: View {
                                     width: recorder.isRecording ? 30 * xScale : 70 * xScale,
                                     height: recorder.isRecording ? 30 * xScale : 70 * xScale
                                 )
+                            
                         }
                     }
                     .animation(.easeInOut(duration: 0.3), value: recorder.isRecording)

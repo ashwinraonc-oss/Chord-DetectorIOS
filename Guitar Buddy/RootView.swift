@@ -12,6 +12,7 @@ struct RootView: View {
     @State var selectedTab = 0
     @State var dimmed = false
     @StateObject private var recorder = AudioController()
+    @StateObject private var tuner = TunerController()
     var body: some View {
         ZStack {
             TabView(selection: $selectedTab){
@@ -19,7 +20,7 @@ struct RootView: View {
                     .tag(0)
                 VoicingsView(recorder: recorder)
                     .tag(1)
-                Text("Tab3")
+                TunerView(tuner: tuner)
                     .tag(2)
                 Text("Tab4")
                     .tag(3)
