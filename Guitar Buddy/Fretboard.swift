@@ -55,14 +55,14 @@ struct FretBoardDiagramView: View {
                     let startX = 0.5 * colWidth
                     let endX = 5.5 * colWidth
 
-                    for i in 0..<6 {
+                    for i in 0..<6 { //string lines
                         let x = (CGFloat(i) + 0.5) * colWidth
                         var path = Path()
                         path.move(to: CGPoint(x: x, y: topPad))
-                        path.addLine(to: CGPoint(x: x, y: size.height))
+                        path.addLine(to: CGPoint(x: x, y: topPad + 4 * rowHeight))
                         context.stroke(path, with: .color(.white), lineWidth: 4 * scale)
                     }
-                    for i in 0..<5 {
+                    for i in 0..<5 { //fret lines
                         let y = topPad + CGFloat(i) * rowHeight
                         var path = Path()
                         path.move(to: CGPoint(x: startX, y: y))

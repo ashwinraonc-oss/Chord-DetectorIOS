@@ -59,6 +59,13 @@ struct ContentView: View {
                             Text("Chord Detected:")
                             Text(chord)
                                 .foregroundStyle(Color(red: 101/255, green: 67/255, blue: 33/255))
+                            if let notes = recorder.detectedNotes {
+                                HStack{
+                                    Text("Notes:")
+                                    Text(notes.joined(separator: ", "))
+                                        .foregroundStyle(Color(red: 101/255, green: 67/255, blue: 33/255))
+                                }
+                            }
                         }
                         .font(.system(size: 33 * xScale))
                         .bold()

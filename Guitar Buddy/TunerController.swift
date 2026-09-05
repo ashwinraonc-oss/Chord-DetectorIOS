@@ -11,6 +11,7 @@ import Combine
 
 class TunerController: NSObject, ObservableObject{
     private var engine = AVAudioEngine()
+    nonisolated (unsafe) private var rollingBuffer: [Float] = []
     @Published var detectedNote: String = "--"
     @Published var detectedFrequency: Float = 0
     @Published var isRunning = false
@@ -40,71 +41,33 @@ class TunerController: NSObject, ObservableObject{
             self.isRunning = false
         }
     }
-    nonisolated private func processBuffer(_ buffer: AVAudioPCMBuffer){
-        guard let channelData = buffer.floatChannelData else {return}
+    nonisolated private func processBuffer(_ buffer: AVAudioPCMBuffer) {
+        guard let channelData = buffer.floatChannelData else { return }
         let frameLength = Int(buffer.frameLength)
         let samples = Array(UnsafeBufferPointer(start: channelData[0], count: frameLength))
+
         let rms = sqrt(samples.map { $0 * $0 }.reduce(0, +) / Float(frameLength))
-        guard rms > 0.02 else {
+        guard rms > 0.001 else {
             DispatchQueue.main.async {
                 self.detectedNote = "--"
                 self.centsOff = 0
             }
             return
         }
-        
-        let realSize = 4096
-        let fftSize = 8192
-        let fftSamples = Array(samples.prefix(realSize))
 
-        var window = [Float](repeating: 0, count: realSize)
-        vDSP_hann_window(&window, vDSP_Length(realSize), Int32(vDSP_HANN_NORM))
-        var windowedSamples = [Float](repeating: 0, count: realSize)
-        vDSP_vmul(fftSamples, 1, window, 1, &windowedSamples, 1, vDSP_Length(realSize))
-        windowedSamples += [Float](repeating: 0, count: fftSize - realSize)
-
-        let halfLength = fftSize / 2
-        var realParts = [Float](repeating: 0, count: halfLength)
-        var imagParts = [Float](repeating: 0, count: halfLength)
-        let log2n = vDSP_Length(13)
-
-        guard let setup = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2)) else { return }
-        defer { vDSP_destroy_fftsetup(setup) }
-
-        realParts.withUnsafeMutableBufferPointer { realPtr in
-            imagParts.withUnsafeMutableBufferPointer { imagPtr in
-                var splitComplex = DSPSplitComplex(realp: realPtr.baseAddress!, imagp: imagPtr.baseAddress!)
-                windowedSamples.withUnsafeBytes { samplesPtr in
-                    let typePtr = samplesPtr.bindMemory(to: DSPComplex.self)
-                    vDSP_ctoz(typePtr.baseAddress!, 2, &splitComplex, 1, vDSP_Length(halfLength))
-                }
-                vDSP_fft_zrip(setup, &splitComplex, 1, log2n, FFTDirection(FFT_FORWARD))
-            }
+        rollingBuffer.append(contentsOf: samples)
+        if rollingBuffer.count > 4096 {
+            rollingBuffer.removeFirst(rollingBuffer.count - 4096)
         }
-
-        var magnitudes = [Float](repeating: 0, count: halfLength)
-        vDSP.squareMagnitudes(DSPSplitComplex(realp: &realParts, imagp: &imagParts), result: &magnitudes)
-        magnitudes[0] = 0
-
-        let (rawPeakIndex, _) = vDSP.indexOfMaximum(magnitudes)
-        let peakIndex = Int(rawPeakIndex)
+        guard rollingBuffer.count == 4096 else { return }
 
         let sampleRate = Float(buffer.format.sampleRate)
-        let interpolatedOffset: Float
-        if peakIndex > 0 && peakIndex < halfLength - 1 {
-            let prev = magnitudes[peakIndex - 1]
-            let curr = magnitudes[peakIndex]
-            let next = magnitudes[peakIndex + 1]
-            let denom = prev - 2 * curr + next
-            interpolatedOffset = denom != 0 ? 0.5 * (prev - next) / denom : 0
-        } else {
-            interpolatedOffset = 0
-        }
-        let frequency = (Float(peakIndex) + interpolatedOffset) * sampleRate / Float(fftSize)
+        let frequency = yin(rollingBuffer, sampleRate: sampleRate)
+        guard frequency > 0 else { return }
+
         let note = frequencyToNote(frequency)
         let centsOff = frequencyToCents(frequency)
-        print("SR: \(buffer.format.sampleRate), frames: \(frameLength), peakIndex: \(peakIndex), freq: \(frequency)")
-        
+
         DispatchQueue.main.async {
             if note == self.pendingNote {
                 self.consecutiveCount += 1
@@ -113,12 +76,70 @@ class TunerController: NSObject, ObservableObject{
                 self.consecutiveCount = 1
             }
             if self.consecutiveCount >= 3 {
+                if self.detectedNote != note {
+                    self.centsOff = 0
+                }
                 self.detectedNote = note
                 self.detectedFrequency = frequency
             }
-            self.centsOff = self.centsOff * 0.8 + centsOff * 0.2
+            self.centsOff = self.centsOff * 0.5 + centsOff * 0.5
         }
-        
+    }
+
+    nonisolated private func yin(_ samples: [Float], sampleRate: Float) -> Float {
+        let bufferSize = samples.count
+        let minTau = Int(sampleRate / 1000)  // highest detectable frequency ~1000 Hz
+        let maxTau = Int(sampleRate / 50)    // lowest detectable frequency ~50 Hz
+        guard maxTau < bufferSize / 2 else { return -1 }
+
+        let windowSize = bufferSize - maxTau
+        var yinBuffer = [Float](repeating: 0, count: maxTau + 1)
+
+        // Step 1: difference function using vDSP for SIMD speed
+        var diff = [Float](repeating: 0, count: windowSize)
+        samples.withUnsafeBufferPointer { ptr in
+            let base = ptr.baseAddress!
+            for tau in 1...maxTau {
+                vDSP_vsub(base + tau, 1, base, 1, &diff, 1, vDSP_Length(windowSize))
+                var sumSq: Float = 0
+                vDSP_svesq(diff, 1, &sumSq, vDSP_Length(windowSize))
+                yinBuffer[tau] = sumSq
+            }
+        }
+
+        // Step 2: cumulative mean normalized difference
+        yinBuffer[0] = 1.0
+        var runningSum: Float = 0
+        for tau in 1...maxTau {
+            runningSum += yinBuffer[tau]
+            if runningSum > 0 {
+                yinBuffer[tau] = yinBuffer[tau] * Float(tau) / runningSum
+            }
+        }
+
+        // Step 3: find first dip below threshold
+        let threshold: Float = 0.12
+        var tau = minTau
+        while tau < maxTau - 1 {
+            if yinBuffer[tau] < threshold {
+                while tau + 1 < maxTau && yinBuffer[tau + 1] < yinBuffer[tau] {
+                    tau += 1
+                }
+                break
+            }
+            tau += 1
+        }
+        guard tau < maxTau - 1 else { return -1 }
+
+        // Step 4: parabolic interpolation for sub-sample accuracy
+        let s0 = yinBuffer[tau - 1]
+        let s1 = yinBuffer[tau]
+        let s2 = yinBuffer[tau + 1]
+        let denom = 2 * (2 * s1 - s2 - s0)
+        let adjustment = denom != 0 ? (s2 - s0) / denom : 0
+        let betterTau = Float(tau) + adjustment
+
+        return sampleRate / betterTau
     }
     
     nonisolated private func frequencyToNote(_ frequency: Float) -> String {

@@ -47,13 +47,15 @@ struct TunerView: View {
                             .foregroundColor(.white)
                             .offset(x: labelRadius * sin(angle), y: -labelRadius * cos(angle) + centerOffset)
                     }
-                    let allTickAngles = stride(from: -75.0, through: 75.0, by: 15.0).map { $0 }
+                    let allTickAngles = stride(from: -85.0, through: 85.0, by: 5.0).map { $0 }
                     ForEach(0..<allTickAngles.count, id: \.self) { i in
                         let angle = allTickAngles[i] * .pi / 180
                         let isMajor = allTickAngles[i].truncatingRemainder(dividingBy: 30) == 0
+                        let isMedium = allTickAngles[i].truncatingRemainder(dividingBy: 15) == 0
+                        let tickHeight: Double = isMajor ? 14 * scale : (isMedium ? 8 * scale : 4 * scale)
                         Rectangle()
                             .fill(Color.white.opacity(0.6))
-                            .frame(width: 2, height: isMajor ? 12 * scale : 7 * scale)
+                            .frame(width: 2, height: tickHeight)
                             .rotationEffect(.degrees(allTickAngles[i]))
                             .offset(x: tickRadius * sin(angle), y: -tickRadius * cos(angle) + centerOffset)
                     }

@@ -22,6 +22,7 @@ class AudioController: NSObject, ObservableObject, AVAudioRecorderDelegate {
     var audioRecorder: AVAudioRecorder?
     @Published var detectedChord: String?
     @Published var voicings: [[Int]]?
+    @Published var detectedNotes: [String]?
     @Published var isDetecting = false
     @Published var isRecording = false
     @Published var failedConnection = false
@@ -118,6 +119,7 @@ class AudioController: NSObject, ObservableObject, AVAudioRecorderDelegate {
                     DispatchQueue.main.async{
                         self.detectedChord = result.chord
                         self.voicings = result.voicing
+                        self.detectedNotes = result.note_names
                         self.isDetecting = false
                     }
                 }
